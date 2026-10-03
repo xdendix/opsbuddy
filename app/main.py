@@ -10,6 +10,7 @@ sentry_sdk.init(
     dsn="https://ad84b5eb7da94d2a0d8ce8d7e4d40952@o4512189504356352.ingest.us.sentry.io/4512189682745344",
     traces_sample_rate=1.0,
     profiles_sample_rate=1.0,
+    enable_logs=True,
 )
 
 
@@ -68,14 +69,16 @@ def chat_session():
 
             full_reply = ""
 
-            # Membungkus proses Ollama dengan Sentry Tracing
-            with sentry_sdk.start_span(
-                op="ai.inference", description="Gemma 2B Local Generation"
-            ):
-                for chunk in stream_ai_response(messages):
-                    console.print(chunk, end="")
-                    full_reply += chunk
-
+            # Membungkus proses Ollama dengan Sentry Tracing menggunakan start_span yang dimodifikasi
+            with sentry_sdk.start_transaction(
+                name="Gemma Local Generation"
+            ) as transaction:
+                with transaction.start_child(
+                    op="ai.inference", name="Stream Response dari Ollama"
+                ):
+                    for chunk in stream_ai_response(messages):
+                        console.print(chunk, end="")
+                        full_reply += chunk
             print()
             console.print("-" * 50)
             messages.append({"role": "assistant", "content": full_reply})
