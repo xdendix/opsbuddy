@@ -5,10 +5,9 @@ from app.ui import console, ACCENT_COLOR, print_header
 from app.ai_engine import stream_ai_response
 from app.prompts import SYSADMIN_TUTOR_PROMPT
 
-# SENTRY UPGRADE: Inisialisasi Sentry untuk memantau performa model lokal
-# (Daftar akun Sentry gratis, lalu masukkan DSN lu di sini)
+# Inisialisasi Sentry untuk memantau latensi AI lokal
 sentry_sdk.init(
-    dsn="MASUKKAN_DSN_SENTRY_LU_DISINI",
+    dsn="https://ad84b5eb7da94d2a0d8ce8d7e4d40952@o4512189504356352.ingest.us.sentry.io/4512189682745344",
     traces_sample_rate=1.0,
     profiles_sample_rate=1.0,
 )
@@ -16,8 +15,8 @@ sentry_sdk.init(
 
 def read_local_file(filepath):
     """
-    Agentic Feature: Reads a local log file securely.
-    Limits to the last 500 lines to prevent Out-Of-Memory issues on local LLMs.
+    Membaca isi file log lokal dengan aman.
+    Dibatasi maksimal 500 baris terakhir agar AI tidak kehabisan memori.
     """
     try:
         if os.path.exists(filepath):
@@ -33,53 +32,67 @@ def chat_session():
     print_header()
     messages = [{"role": "system", "content": SYSADMIN_TUTOR_PROMPT}]
 
-    while True:
-        user_input = console.input(
-            f"\n[{ACCENT_COLOR}]Andre (Trainee) > [/{ACCENT_COLOR}] "
-        )
-
-        if user_input.lower() in ["exit", "quit"]:
-            console.print(
-                f"[{ACCENT_COLOR}]Session terminated. Stay secure, stay local![/{ACCENT_COLOR}]"
-            )
-            break
-
-        # AGENT UPGRADE: Command khusus untuk membaca file lokal
-        if user_input.startswith("/analyze "):
-            filepath = user_input.split(" ", 1)[1]
-            console.print(
-                f"[bold yellow]🔍 OpsBuddy is reading local file: {filepath}...[/bold yellow]"
+    try:
+        while True:
+            user_input = console.input(
+                f"\n[{ACCENT_COLOR}]Andre (Trainee) > [/{ACCENT_COLOR}] "
             )
 
-            file_content = read_local_file(filepath)
-
-            if file_content:
-                prompt_to_ai = f"Please analyze this error log and explain the root cause to Andre in simple terms:\n\n```text\n{file_content}\n```"
-                messages.append({"role": "user", "content": prompt_to_ai})
-            else:
+            if user_input.lower() in ["exit", "quit"]:
                 console.print(
-                    f"[bold red]❌ File not found or unreadable. Check the path.[/bold red]"
+                    f"[{ACCENT_COLOR}]Session terminated. Stay secure, stay local![/{ACCENT_COLOR}]"
                 )
-                continue
-        else:
-            messages.append({"role": "user", "content": user_input})
+                break
 
-        console.print("\n[bold cyan]OpsBuddy:[/bold cyan]")
+            # Fitur Local File Analyzer (Membaca file log)
+            if user_input.startswith("/analyze "):
+                filepath = user_input.split(" ", 1)[1]
+                console.print(
+                    f"[bold yellow]🔍 OpsBuddy is reading local file: {filepath}...[/bold yellow]"
+                )
 
-        full_reply = ""
+                file_content = read_local_file(filepath)
 
-        # SENTRY TRACING: Membungkus eksekusi Ollama untuk dikirim log performanya ke Sentry
-        with sentry_sdk.start_span(
-            op="ai.inference", description="Gemma 2B Local Generation"
-        ):
-            for chunk in stream_ai_response(messages):
-                console.print(chunk, end="")
-                full_reply += chunk
+                if file_content:
+                    prompt_to_ai = f"Please analyze this error log and explain the root cause concisely:\n\n```text\n{file_content}\n```"
+                    messages.append({"role": "user", "content": prompt_to_ai})
+                else:
+                    console.print(
+                        f"[bold red]❌ File not found or unreadable. Check the path.[/bold red]"
+                    )
+                    continue
+            else:
+                messages.append({"role": "user", "content": user_input})
 
-        print()
-        console.print("-" * 50)
-        messages.append({"role": "assistant", "content": full_reply})
+            console.print("\n[bold cyan]OpsBuddy:[/bold cyan]")
+
+            full_reply = ""
+
+            # Membungkus proses Ollama dengan Sentry Tracing
+            with sentry_sdk.start_span(
+                op="ai.inference", description="Gemma 2B Local Generation"
+            ):
+                for chunk in stream_ai_response(messages):
+                    console.print(chunk, end="")
+                    full_reply += chunk
+
+            print()
+            console.print("-" * 50)
+            messages.append({"role": "assistant", "content": full_reply})
+
+            # Memaksa Sentry mengirim data latensi ke server secara real-time
+            sentry_sdk.flush()
+
+    # Menangani penutupan aplikasi via Ctrl+C secara bersih tanpa error panjang
+    except KeyboardInterrupt:
+        console.print(
+            f"\n\n[{ACCENT_COLOR}]Program dihentikan paksa (Ctrl+C). Stay secure, stay local![/{ACCENT_COLOR}]"
+        )
+        sentry_sdk.flush()
 
 
 if __name__ == "__main__":
-    chat_session()
+    try:
+        chat_session()
+    except KeyboardInterrupt:
+        pass
